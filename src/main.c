@@ -39,6 +39,39 @@ static frWorld *world;
 
 static Texture2D logo;
 
+typedef struct Box {
+    frBody *body;
+    RenderTexture rtx;
+} Box;
+
+/* | `smash` 모듈 변수 및 상수... | */
+
+const frMaterial MATERIAL_BALL = { 
+    .density         = 0.5f, 
+    .staticFriction  = 0.35f, 
+    .dynamicFriction = 0.15f
+};
+
+const frMaterial MATERIAL_BOX = { 
+    .density         = 0.75f, 
+    .staticFriction  = 0.5f, 
+    .dynamicFriction = 0.15f
+};
+
+const float BALL_RADIUS = 1.5f;
+
+static frWorld *world;
+static frBody *ball;
+
+static Texture2D logo, rlLogo;
+
+#define WIDTH_IN_BOXES   16
+#define HEIGHT_IN_BOXES  16
+static Box boxes[WIDTH_IN_BOXES * HEIGHT_IN_BOXES];
+
+static float boxWidth, boxHeight;
+static float halfBoxWidth, halfBoxHeight;
+
 /* | `basic` 모듈 함수... | */
 
 /* 예제 프로그램을 초기화한다. */
@@ -75,6 +108,7 @@ int main(void) {
 
 /* 예제 프로그램을 초기화한다. */
 static void InitExample(void) {
+    const Vector2 screenCenter = { 0.5f * SCREEN_WIDTH, 0.5f * SCREEN_HEIGHT };
     const Rectangle bounds = {
         .x = -0.05f * frNumberPixelsToMeters(SCREEN_WIDTH),
         .y = -0.05f * frNumberPixelsToMeters(SCREEN_HEIGHT),
@@ -83,13 +117,44 @@ static void InitExample(void) {
     };
 
     // 게임 세계를 생성한다.
-    world = frCreateWorld(frVec2ScalarMultiply(FR_WORLD_DEFAULT_GRAVITY, 0.0f), bounds);
+    world = frCreateWorld(FR_STRUCT_ZERO(Vector2), bounds);
 
-    logo = LoadTexture("../res/images/logo_small.png");
+    ball = frCreateBodyFromShape(
+        FR_BODY_DYNAMIC,
+        FR_FLAG_INFINITE_INERTIA,
+        (Vector2) { -BALL_RADIUS, -BALL_RADIUS },
+        frCreateCircle(MATERIAL_BALL, BALL_RADIUS)
+    );
+
+    frAddToWorld(world, ball);
 }
 
 /* 예제 프로그램을 실행한다. */
 static void UpdateExample(void) {
+    const Vector2 screenCenter = { 0.5f * SCREEN_WIDTH, 0.5f * SCREEN_HEIGHT };
+    if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+        const Vector2 position = frVec2PixelsToMeters(GetMousePosition());
+
+        Vector2 impulse = frVec2ScalarMultiply(
+            frVec2Subtract(frVec2PixelsToMeters(screenCenter), position),
+            0.03f
+        );
+
+        frSetBodyVelocity(ball, FR_STRUCT_ZERO(Vector2));
+        frSetBodyPosition(ball, position);
+        
+        frApplyImpulse(ball, impulse);
+    }
+
+    for (int i = 0; i < WIDTH_IN_BOXES * HEIGHT_IN_BOXES; i++) {
+        if (!frIsInWorldBounds(world, boxes[i].body)) {
+            frRemoveFromWorld(world, boxes[i].body);
+            frReleaseBody(boxes[i].body);
+
+            boxes[i].body = NULL;
+        }
+    }
+
     frSimulateWorld(world, DELTA_TIME);
 
     {
@@ -97,18 +162,109 @@ static void UpdateExample(void) {
             
         ClearBackground(MATTEBLACK);
 
-        const Vector2 position = {
-            0.5f * (SCREEN_WIDTH - logo.width),
-            0.5f * (SCREEN_HEIGHT - logo.height)
-        };
+        for (int i = 0; i < WIDTH_IN_BOXES * HEIGHT_IN_BOXES; i++) {
+            if (boxes[i].body == NULL) continue;
 
-        DrawTextureV(logo, position, ColorAlpha(WHITE, 0.5f));
+            Vector2 bodyPos = frGetBodyPosition(boxes[i].body);
+
+            const Rectangle sourceRec = { 
+                .width = boxWidth, 
+                .height = boxHeight 
+            };
+
+            const Rectangle destRec = {
+                .x = frNumberMetersToPixels(bodyPos.x), 
+                .y = frNumberMetersToPixels(bodyPos.y),
+                .width = boxWidth,
+                .height = boxHeight
+            };
+
+            const Vector2 originPos = { halfBoxWidth, halfBoxHeight };
+
+            DrawTexturePro(
+                boxes[i].rtx.texture,
+                sourceRec,
+                destRec,
+                originPos,
+                RAD2DEG * frGetBodyRotation(boxes[i].body),
+                WHITE
+            );
+        }
+
+        const Color color = ColorAlpha(GRAY, 0.65f);
+
+        frDrawBodyLines(ball, 2.0f, color);
+
+        frDrawArrow(
+            frVec2PixelsToMeters(GetMousePosition()),
+            frVec2PixelsToMeters(screenCenter),
+            2.0f,
+            color
+        );
+
+        DrawRing(
+            GetMousePosition(),
+            frNumberMetersToPixels(BALL_RADIUS) - 2.0f,
+            frNumberMetersToPixels(BALL_RADIUS),
+            0.0f,
+            360.0f,
+            32,
+            color
+        );
 
         frDrawSpatialHash(frGetWorldSpatialHash(world), 0.25f, DARKGRAY);
+
+        const Font font = GetFontDefault();
+
+        DrawTextEx(
+            font, 
+            TextFormat("%d bodies", frGetWorldBodyCount(world)),
+            (Vector2) { 8.0f, 32.0f },
+            font.baseSize,
+            2.0f,
+            WHITE
+        );
 
         DrawFPS(8, 8);
 
         EndDrawing();
+    //Vector2 position = (Vector2){10, 10};
+    //Vector2 impulse = (Vector2){10, 10};    
+    //frSetBodyVelocity(ball, (Vector2){10,20});
+    //frSetBodyPosition(ball, position);
+
+    //frApplyImpulse(ball, impulse);
+
+    //frSimulateWorld(world, DELTA_TIME);
+
+    //{
+    //    BeginDrawing();
+    //        
+    //    ClearBackground(MATTEBLACK);
+
+    //    const Vector2 position = {
+    //        0.5f * (SCREEN_WIDTH - logo.width),
+    //        0.5f * (SCREEN_HEIGHT - logo.height)
+    //    };
+
+    //    const Color color = ColorAlpha(GRAY, 0.65f);
+    //    DrawTextureV(logo, position, ColorAlpha(WHITE, 0.5f));
+
+    //    frDrawBodyLines(ball, 2.0f, color);
+    //    DrawRing(
+    //        position,
+    //        frNumberMetersToPixels(BALL_RADIUS) - 2.0f,
+    //        frNumberMetersToPixels(BALL_RADIUS),
+    //        0.0f,
+    //        360.0f,
+    //        32,
+    //        color
+    //    );
+    //    frDrawSpatialHash(frGetWorldSpatialHash(world), 0.25f, DARKGRAY);
+
+    //    DrawFPS(8, 8);
+
+    //    EndDrawing();
     }
 }
 
